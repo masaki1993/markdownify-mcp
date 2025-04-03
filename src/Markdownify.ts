@@ -39,6 +39,18 @@ export class Markdownify {
     return stdout;
   }
 
+  private static async _youtubeToMarkdown(url: string): Promise<string> {
+    try {
+      const { stdout, stderr } = await execAsync(`npx @anaisbetts/mcp-youtube "${url}"`);
+      if (stderr) {
+        throw new Error(`Error executing YouTube conversion: ${stderr}`);
+      }
+      return stdout;
+    } catch (error) {
+      throw new Error(`Failed to convert YouTube video: ${error}`);
+    }
+  }
+
   private static async saveToTempFile(content: string): Promise<string> {
     const tempOutputPath = path.join(
       os.tmpdir(),
@@ -60,27 +72,22 @@ export class Markdownify {
     uvPath?: string;
   }): Promise<MarkdownResult> {
     try {
-      let inputPath: string;
-      let isTemporary = false;
+      let text: string;
 
       if (url) {
-        const response = await fetch(url);
-        const content = await response.text();
-        inputPath = await this.saveToTempFile(content);
-        isTemporary = true;
+        if (url.includes('youtube.com') || url.includes('youtu.be')) {
+          text = await this._youtubeToMarkdown(url);
+        } else {
+          const response = await fetch(url);
+          text = await response.text();
+        }
       } else if (filePath) {
-        inputPath = filePath;
+        text = await this._markitdown(filePath, projectRoot, uvPath);
       } else {
         throw new Error("Either filePath or url must be provided");
       }
 
-      const text = await this._markitdown(inputPath, projectRoot, uvPath);
       const outputPath = await this.saveToTempFile(text);
-
-      if (isTemporary) {
-        fs.unlinkSync(inputPath);
-      }
-
       return { path: outputPath, text };
     } catch (e: unknown) {
       if (e instanceof Error) {
